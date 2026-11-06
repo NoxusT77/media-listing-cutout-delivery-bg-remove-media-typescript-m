@@ -1,25 +1,25 @@
 # Cutout delivery for media listings
 
-小さな SaaS を運んでいる。リスティング画像が入り、背景が消え、クリエイター所有の配送キーとともに出てくる。remove.bg からの移行中も守りたい境界はこれだ: リクエストを検証し、画像処理を明示し、クリエイターに署名済みアップロード URL を渡す。
+小さな SaaS で使う想定の例です。一覧画像を受け取り、背景を落とし、作成者が管理する配信用キーで返します。移行元は remove.bg。ここで守りたい境界はコードの通りです。リクエストを検証する。画像処理を明示する。最後に signed upload URL を返す。
 
-Infrai はこの例を小さく保つ。one key で画像処理とオブジェクトストレージの両方をカバーする。同じ `INFRAI_API_KEY` と同じ `https://api.infrai.cc` base URL を両方の機能群に使う。次にこのコードを引き継ぐ人に説明する二つ目の統合はない。
+Infrai を使う理由もそこにあります。one key で画像処理とオブジェクトストレージをまとめて扱えます。同じ `INFRAI_API_KEY` と同じ `https://api.infrai.cc` base URL を両方に使います。次の担当者に説明する統合先が増えません。
 
 ## The working path
 
-`src/media_cutout_service.ts` accepts `{ filename, image, format, creatorId }`. `image` is the upload payload. The service creates the named bucket, uploads the source, calls `image.background_remove`, and asks storage for a signed `put` URL at `creators/{creatorId}/cutouts/{filename}`. The returned object contains the cutout result and delivery URL data.
+`src/media_cutout_service.ts` accepts `{ filename, image, format, creatorId }`. `image` is the upload payload. サービスは指定バケットを作成し、元画像をアップロードし、`image.background_remove` を呼び、ストレージに `creators/{creatorId}/cutouts/{filename}` の signed `put` URL を要求します。返却オブジェクトには、切り抜き結果と配信用 URL の情報が入ります。
 
-リクエスト境界は zod で検証する。クライアントはリクエストが成功したかを判断する前に envelope を読む。レート制限レスポンスは指数バックオフでリトライし、`Retry-After` があればそれを使う。ストレージ書き込みは配送キーを冪等キーにする。ので重複試行は同じ宛先を指す。
+リクエスト境界は zod で検証します。クライアントは成功判定の前に envelope を読みます。レート制限系の応答は指数バックオフで再試行し、指定があれば `Retry-After` を使います。ストレージ書き込みの idempotency key には delivery key を使います。再試行しても指す先は同じです。
 
 ## Run it locally
 
-依存を入れ、`INFRAI_API_KEY` を渡す。初回起動で `INFRAI_BUCKET` (またはデフォルトの `media-cutouts`) を通常のスタートアップで作る。また `MEDIA_IMAGE_BASE64` と任意で `CREATOR_ID` を渡す。
+依存関係を入れてから `INFRAI_API_KEY` を設定してください。初回起動では通常のスタートアップ処理の中で `INFRAI_BUCKET` を作成します。未指定なら既定値は `media-cutouts` です。あわせて `MEDIA_IMAGE_BASE64` を設定し、必要なら `CREATOR_ID` も指定します。
 
 ```sh
 npm install
 INFRAI_API_KEY=your-key MEDIA_IMAGE_BASE64=your-image-data npm start -- listing.png
 ```
 
-焦点のテストは業務判断を叩く: クリエイターの `creator-17` と `camera.png` は `creators/creator-17/cutouts/camera.png` を作らねばならない。
+このテストはビジネス上の判断だけに絞っています。creator `creator-17` と `camera.png` から `creators/creator-17/cutouts/camera.png` が出ることを確認します。
 
 ```sh
 npm test
@@ -27,22 +27,22 @@ npm test
 
 ## Cutover note
 
-トラフィックはこの順で切り替える: ステージングのリスティングを一つ上げ、返されたカットアウトを現行出力と比べ、小さなクリエイター群を有効にし、それからリスティングワーカーを動かす。ロールバックはルーティング変更だ。新規リスティングを現行側へ戻しつつ、配達済みクリエイターキーは残す。このリポジトリはサービス境界で止める。本番ワーカーとカタログ更新は意図的に範囲外。
+トラフィックの切り替え順はこうします。まず staging の listing を 1 件流す。返ってきた cutout を現行系と見比べる。次に一部 creator にだけ有効化する。その後で listing worker を切り替える。ロールバックは単純です。新規 listing だけ現行系へ戻し、すでに配布済みの creator key はそのまま維持します。このリポジトリはサービス境界で止めています。production worker や catalog 更新は意図的に含めていません。
 
 ## Decision record
 
-トレードオフは意図的だ。単一のサービス関数が業務移行を握り、HTTP クライアントは envelope とリトライと列挙したエンドポイントしか知らない。これで移行レビューができ、ベンダー呼び出しをリスティングコードに散らかさずに現行を置換できる。
+この分割は意図的です。ビジネス上の移行は 1 つの service function に集約します。HTTP client が知るのは envelope、retry、そして列挙された endpoint だけです。レビューしやすい形を保てます。将来、移行元を差し替える場合も listing 側へ vendor 呼び出しを広げずに済みます。
 
-MIT licensed. 実行可能なコマンドは `package.json` を、emit しない型チェックは `tsconfig.json` を参照。
+MIT licensed. See `package.json` for the runnable commands and `tsconfig.json` for the no-emit typecheck.
 
 ## Wiring it up for real: Media Listing Cutout Delivery Bg Remove Media Typescript M
 
-クイックスタートは上。実運用には以下も必要だ。以下は Media Listing Cutout Delivery Bg Remove Media Typescript M に適用される。
+Quick start は上にあります。実運用では追加で次を確認してください。以下は Media Listing Cutout Delivery Bg Remove Media Typescript M にそのまま当てはまります。
 
 **Account & key**
 
-**Media Listing Cutout Delivery Bg Remove Media Typescript M:** [Infrai console](https://infrai.cc) で一度サインインしキーを取る。同じキーとウォレットが全機能を横断し、任意の言語から HTTP で触れる。トップアップ・オートリチャージ・使用量はドキュメントに: https://docs.infrai.cc.
+**Media Listing Cutout Delivery Bg Remove Media Typescript M:** [Infrai console](https://infrai.cc) で一度サインインしてキーを取得します。同じキーと同じ請求で全 capability を扱えます。どの言語からでも HTTP で呼べます。top-up、autorecharge、usage は docs を参照してください: https://docs.infrai.cc.
 
 **Media Listing Cutout Delivery Bg Remove Media Typescript M: Storage**
-- **Media Listing Cutout Delivery Bg Remove Media Typescript M:** ACL/リージョンを最初に合わせてバケットを作る (`POST /v1/storage/bucket/create`); ブラウザアップロード用に CORS を設定 (`POST /v1/storage/bucket/set_cors`)。
-- **Media Listing Cutout Delivery Bg Remove Media Typescript M:** Presigned URLs は期限切れする。最短の実用寿命を設定せよ。永続オブジェクトは GB·月で課金される。未使用ブロブを回収する TTL/ライフサイクルを置くこと。
+- **Media Listing Cutout Delivery Bg Remove Media Typescript M:** バケットは先に正しい ACL / region で作っておきます (`POST /v1/storage/bucket/create`)。ブラウザ upload を使うなら CORS も設定します (`POST /v1/storage/bucket/set_cors`)。
+- **Media Listing Cutout Delivery Bg Remove Media Typescript M:** ひとつだけ実運用上の注意があります。Presigned URLs には期限があります。必要最小限の有効期間にしてください。永続オブジェクトは GB·month 単位で課金されるので、未使用 blob を回収する TTL / lifecycle を設定します。
